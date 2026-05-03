@@ -9,6 +9,7 @@ import torch.utils.cpp_extension
 from filelock import FileLock
 
 from humming.jit.utils import get_humming_cache_dir, get_humming_lock_filename, hash_path_content
+from humming.utils.cuda import filter_cuda_paths
 
 _libs = {}
 _launcher_inited = False
@@ -79,12 +80,16 @@ def init_humming_launcher():
         dirname = os.path.dirname(humming.__file__)
         filename = os.path.join(dirname, "csrc/launcher/launcher.cpp")
 
+        cuda_env = filter_cuda_paths(
+            required_headers=["cuda.h", "crt/host_defines.h", "cuda/std/cstdint"],
+        )
+
         torch.utils.cpp_extension.load(
             name="humming_launcher",
             sources=[filename],
+            extra_include_paths=list(cuda_env["include_paths"]),
             extra_ldflags=["-lcuda", "-lc10_cuda", "-ltorch_cuda"],
             extra_cflags=["-O3", f"-DUSE_TORCH_STABLE_API={USE_TORCH_STABLE_API}"],
-            with_cuda=True,
             build_directory=build_dir,
         )
 

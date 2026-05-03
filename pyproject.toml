@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "humming-kernels"
-version = "0.1.0a1"
+version = "0.1.0"
 description = "Quantization GEMM Kernel"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -14,7 +14,23 @@ dependencies = [
     "safetensors",
     "jinja2",
     "pyelftools",
-    "cuda-python"
+    "nvidia-ml-py",
+]
+
+[project.optional-dependencies]
+cu12 = [
+    "nvidia-cuda-runtime-cu12",
+    "nvidia-cuda-cccl-cu12",
+    "nvidia-cuda-nvcc-cu12",
+    "nvidia-cuda-nvrtc-cu12",
+    "cuda-python>=12,<13",
+]
+cu13 = [
+    "nvidia-cuda-runtime",
+    "nvidia-cuda-cccl",
+    "nvidia-cuda-nvcc",
+    "nvidia-cuda-nvrtc",
+    "cuda-python>=13,<14",
 ]
 
 [tool.setuptools]
@@ -29,3 +45,4 @@ line-length = 100
 
 [tool.mypy]
 disable_error_code = ["no-untyped-call", "no-untyped-def", "type-arg", "untyped-decorator", "no-any-return"]
+ignore_missing_imports = true

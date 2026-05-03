@@ -9,6 +9,7 @@ from cuda.bindings import nvrtc
 from filelock import FileLock
 
 import humming.jit.utils as jit_utils
+from humming.utils.cuda import filter_cuda_paths
 
 
 class Compiler:
@@ -160,28 +161,8 @@ class NVRTCCompiler(Compiler):
 
     @classmethod
     def _get_include_dirs(cls):
-        dirs = list(cls.include_dirs())
-        cuda_include = jit_utils.get_cuda_include_path()
-        if os.path.isdir(cuda_include):
-            dirs.append(cuda_include)
-            cccl = os.path.join(cuda_include, "cccl")
-            if os.path.isdir(cccl):
-                dirs.append(cccl)
-
-        try:
-            import nvidia
-
-            for pkg_path in nvidia.__path__:
-                for sub in os.listdir(pkg_path):
-                    inc = os.path.join(pkg_path, sub, "include")
-                    if os.path.isdir(inc):
-                        dirs.append(inc)
-                        cccl = os.path.join(inc, "cccl")
-                        if os.path.isdir(cccl):
-                            dirs.append(cccl)
-        except (ImportError, OSError):
-            pass
-        return dirs
+        env = filter_cuda_paths(required_headers=["cuda_runtime.h"])
+        return list(cls.include_dirs()) + list(env["include_paths"])
 
     @classmethod
     def _compile(cls, source_path, cache_dirname, sm_version, kernel_expr, flags):
@@ -243,8 +224,12 @@ class NVRTCCompiler(Compiler):
 
 class NVCCCompiler(Compiler):
     @classmethod
+    def _get_env(cls):
+        return filter_cuda_paths(required_binaries=["nvcc"])
+
+    @classmethod
     def signature(cls):
-        nvcc_path = jit_utils.get_cuda_command_path("nvcc")
+        nvcc_path = cls._get_env()["binaries"]["nvcc"]
         nvcc_version = jit_utils.get_cuda_nvcc_version(nvcc_path)
         return "nvcc+" + nvcc_version
 
@@ -282,7 +267,7 @@ class NVCCCompiler(Compiler):
             with open(source_path, "a") as f:
                 f.write(f"\nauto ptr = reinterpret_cast<void*>(&{kernel_expr});\n")
 
-        nvcc_path = jit_utils.get_cuda_command_path("nvcc")
+        nvcc_path = cls._get_env()["binaries"]["nvcc"]
         target_path = (cache_dirname / "kernel_tmp.cubin").as_posix()
 
         cmd = [nvcc_path, source_path, "-o", target_path] + flags
