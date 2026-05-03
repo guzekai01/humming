@@ -135,8 +135,6 @@ class HummingLayerMeta(LayerConfig):
                 and self.bs_dtype in [dtypes.float8e8m0]
             )
 
-        msg = "don't set use_int_weight_scale to True directly"
-        assert self.use_int_weight_scale is not True, msg
         if not self.use_int_weight_scale and not self.use_fused_e8m0_scale:
             self.use_int_weight_scale = (
                 self.a_dtype in [dtypes.int8, dtypes.int4]

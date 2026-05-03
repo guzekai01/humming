@@ -167,6 +167,7 @@ def quant_input(
     if outputs is None:
         outputs = torch.empty(output_shape, dtype=output_dtype, device=inputs.device)
 
+    assert inputs.dtype in [torch.float16, torch.bfloat16, torch.float32]
     assert outputs.shape == output_shape
     assert outputs.dtype == output_dtype
     assert outputs.device == inputs.device

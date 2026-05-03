@@ -9,6 +9,7 @@ import torch.utils.cpp_extension
 from filelock import FileLock
 
 import humming.utils.jit as jit_utils
+from humming import dtypes
 from humming.utils.cuda import filter_cuda_paths
 
 _libs = {}
@@ -120,7 +121,8 @@ def init_humming_launcher():
         if kernel.gemm_type == GemmType.INDEXED:
             shape_m = inputs.size(0) * top_k
         shape_n = kernel.shape_n - kernel.pad_shape_n
-        return torch.empty((shape_m, shape_n), dtype=inputs.dtype, device=inputs.device)
+        output_dtype = dtypes.torch_dtype_map[kernel.c_dtype]
+        return torch.empty((shape_m, shape_n), dtype=output_dtype, device=inputs.device)
 
 
 def build_humming_launcher_in_bg():
