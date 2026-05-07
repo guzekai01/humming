@@ -109,6 +109,7 @@ def bench_humming(
                 gemm_type=gemm_type,
                 balanced=balanced,
                 block_size_config=block_size_config,
+                expert_max_tokens=expert_max_tokens,
             )
             _, expert_layout, sorted_ids, expert_ids, num_tokens_padded = moe_tensors
 
