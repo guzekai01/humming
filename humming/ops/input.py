@@ -98,7 +98,7 @@ def _quant_tensor_kernel(
     GROUPS_PER_BLOCK: tl.constexpr,
     dtype: tl.constexpr,
 ):
-    block_id = tl.program_id(0)
+    block_id = tl.program_id(0).to(tl.int64)
     tl.static_assert(N % GROUP_SIZE == 0)
 
     row_num_blocks = N // GROUP_SIZE
@@ -128,7 +128,7 @@ def _quant_tensor_kernel(
             tl.store(xq_ptr + group_id * GROUP_SIZE // 2 + cols, x_q, mask=mask)
 
             if is_dynamic:
-                tl.store(scale_ptr + row_id, scale)
+                tl.store(scale_ptr + row_id * row_num_blocks + col_block_id, scale)
         else:
             cols = tl.arange(0, BLOCK)
             mask = cols < GROUP_SIZE

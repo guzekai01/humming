@@ -77,7 +77,7 @@ public:
   void load_legacy(int4 *smem_ptr) {
     if constexpr (kSwizzleBytes == 128) {
       load_legacy_swizzled_128B(smem_ptr);
-    } else if (kSwizzleBytes == 64) {
+    } else if constexpr (kSwizzleBytes == 64) {
       load_legacy_swizzled_64B(smem_ptr);
     }
   }
@@ -114,8 +114,8 @@ public:
   CUDA_INLINE
   void load_legacy_swizzled_64B(int4 *smem_ptr) {
     static_assert(BlockShape::K * ElementA::kBits == 512);
-    uint32_t smem = cast_smem_ptr_to_uint(smem_ptr);
-    uint32_t smem_swizzled_col = (thread_id % 8) ^ (((thread_id % 32) / 8 + smem / 128) % 4);
+    uint32_t smem_uint = cast_smem_ptr_to_uint(smem_ptr);
+    uint32_t smem_swizzled_col = (thread_id % 8) ^ (((thread_id % 32) / 8 + smem_uint / 128) % 4);
 
     PRAGMA_UNROLL
     for (uint32_t i = 0; i < kLoadIters; i++) {
