@@ -178,7 +178,7 @@ class DeviceHeuristics:
                 block_shape_m = num_warps_m * warp_shape_m
 
         if num_ctas_per_sm == 1:
-            factor = min(4.5, meta.shape_k / (3 * block_shape_k))
+            factor = min(4.5, meta.shape_n / (3 * block_shape_n))
             num_sms = min(num_sms, math.ceil(num_blocks_n * num_blocks_m * factor))
 
         return {
