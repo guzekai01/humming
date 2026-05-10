@@ -43,7 +43,6 @@ ScalarType dtype_id_to_tensor_dtype(uint32_t dtype_id) {
   switch (dtype_id) {
     case 10080000: return ScalarType::Byte;
     case 11080000: return ScalarType::Char;
-    case 21040201: return ScalarType::Float4_e2m1fn_x2;
     case 21080403: return ScalarType::Float8_e4m3fn;
     case 21080502: return ScalarType::Float8_e5m2;
     case 20080800: return ScalarType::Float8_e8m0fnu;

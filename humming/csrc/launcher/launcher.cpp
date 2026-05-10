@@ -23,10 +23,10 @@ inline int64_t find_kernel_configs_target_index(IntArrayRef &configs, int64_t sh
       if (shape_m > min_val && shape_m <= max_val) return i + 2;
     }
 
-    STD_TORCH_CHECK(false, "shape_m is not within any range defined in configs.");
+    ASSERT_CHECK(false, "shape_m is not within any range defined in configs.");
   }
 
-  STD_TORCH_CHECK(false, "configs length must be 1-2 or a non-zero multiple of 4.");
+  ASSERT_CHECK(false, "configs length must be 1-2 or a non-zero multiple of 4.");
 };
 
 inline KernelLaunchData find_kernel_launch_data(IntArrayRef &configs, int64_t shape_m) {
@@ -34,7 +34,7 @@ inline KernelLaunchData find_kernel_launch_data(IntArrayRef &configs, int64_t sh
   int64_t index = find_kernel_configs_target_index(configs, shape_m);
   int64_t kernel_id = configs[index];
   int64_t num_sms = n < 2 ? 0 : configs[index + 1];
-  STD_TORCH_CHECK(g_kernel_data.find(kernel_id) != g_kernel_data.end(), "kernel not existed.");
+  ASSERT_CHECK(g_kernel_data.find(kernel_id) != g_kernel_data.end(), "kernel not existed.");
   KernelData &kernel_data = g_kernel_data[kernel_id];
   KernelLaunchData kernel_launch_data = {kernel_data, num_sms};
   return kernel_launch_data;
