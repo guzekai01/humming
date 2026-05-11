@@ -4,9 +4,6 @@
 
 
 CUDA_INLINE float dequant_fp4_val(uint32_t val) {
-  constexpr uint32_t scale_factor = 0x7E800000;
-  const float scale_factor_float = *reinterpret_cast<const float *>(&scale_factor);
-
   uint32_t sign = (val & 0x8) << 28;
   uint32_t other = (val & 0x7) << 22;
   uint32_t res = sign | other;
