@@ -116,7 +116,7 @@ public:
     if constexpr (!kIsIndexedGemm) {
       gmem_ptr = gmem_ptr_raw + ((row_offset * kProblemNumGroups) + col_offset);
     } else {
-      gmem_ptr = gmem_ptr_raw;
+      gmem_ptr = gmem_ptr_raw + col_offset;
 
       constexpr uint32_t kSmemStride = kNumGroups / (sizeof(LoadType) / 4);
       uint32_t smem_row = threadIdx.x / kSmemStride;
