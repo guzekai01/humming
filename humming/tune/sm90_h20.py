@@ -37,11 +37,17 @@ class Sm90H20Heuristics(DeviceHeuristics):
                 "warp_shape": (64, 64, 512 // a_dtype.num_bits),
                 "num_ctas_per_sm": 2,
             }
-        elif use_fused_e8m0_scale:
+        elif use_fused_e8m0_scale and not is_moe:
             return {
-                "block_shape": (64, 256, 1024 // a_dtype.num_bits),
-                "warp_shape": (64, 64, 1024 // a_dtype.num_bits),
+                "block_shape": (128, 128, 1024 // a_dtype.num_bits),
+                "warp_shape": (128, 32, 1024 // a_dtype.num_bits),
                 "num_ctas_per_sm": 2,
+            }
+        elif use_fused_e8m0_scale and is_moe:
+            return {
+                "block_shape": (64, 128, 1024 // a_dtype.num_bits),
+                "warp_shape": (64, 32, 1024 // a_dtype.num_bits),
+                "num_ctas_per_sm": 3,
             }
         elif group_size == 0 and not is_moe:
             return {
@@ -172,19 +178,22 @@ class Sm90H20Heuristics(DeviceHeuristics):
             block_shape_k = block_shape_k // 2
             assert block_shape_k >= warp_shape_k
 
-        use_stream_k = True
-        if is_moe and block_shape_m < 48 and meta.shape_k // block_shape_k <= 4:
-            use_stream_k = False
-
         config = {
             "block_shape": (block_shape_m, block_shape_n, block_shape_k),
             "warp_shape": (warp_shape_m, warp_shape_n, warp_shape_k),
-            "use_stream_k": use_stream_k,
+            "use_stream_k": meta.shape_k > 1024,
             "use_f16_accum": use_f16_accum,
             "num_sms": num_sms,
             "num_stages": num_stages,
             "num_ctas_per_sm": num_ctas_per_sm,
         }
+
+        if meta.shape_k <= 512 and is_moe and shape_m >= 2048:
+            config["use_tma"] = True
+            config["use_mbarrier"] = True
+            if gemm_type == GemmType.INDEXED:
+                config["use_tma_a"] = False
+                config["use_tma_c"] = False
 
         if block_shape_m >= 48 and num_ctas_per_sm <= 2 and num_warps <= 8 and not is_moe:
             config["use_tma"] = True
