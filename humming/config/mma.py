@@ -209,7 +209,11 @@ class WgmmaOpClassImpl:
         # Swap M<->N and A-dtype<->B-dtype in PTX: project's A becomes wgmma's B and
         # project's B becomes wgmma's A. The PTX dtype suffix order is .cd.a.b, so
         # the wgmma A slot takes project's b_dtype and the wgmma B slot takes a_dtype.
-        asm_op = f"wgmma.mma_async.sync.aligned.m{n}n{m}k{k}"
+        # PROBE: cu130 ptxas rejects wgmma m>64. Try legal `m{m}n{n}k{k}` shape
+        # to confirm it's purely a shape-modifier compatibility issue.
+        # NOTE: this breaks numerical correctness because the surrounding swap
+        # logic (dtype order, operand roles) is unchanged.
+        asm_op = f"wgmma.mma_async.sync.aligned.m{m}n{n}k{k}"
         asm_op += f".{cd_dtype}.{b_dtype}.{a_dtype}"
         # satfinite gates on the wgmma-A operand dtype (= project's B).
         if "s" in b_dtype:
