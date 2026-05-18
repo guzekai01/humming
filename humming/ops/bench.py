@@ -14,8 +14,13 @@ def tops_bench(dtype: str, mma_type: str | None = None, use_f16_accum: bool = Fa
         mma_shape_n = 8
         mma_shape_k = 256 // dtypes.DataType.from_str(dtype).num_bits
     else:
-        mma_shape_m = 64
-        mma_shape_n = 256
+        # WgmmaOpClass swaps project M/N when emitting PTX (m{n}n{m}k{k}) so
+        # the wgmma m dimension stays at 64 (per PTX ISA wgmma constraint).
+        # Pass project (m=256, n=64) so the emitted PTX is m64n256k*, which
+        # CUDA 13 ptxas accepts. The earlier (m=64, n=256) produced
+        # m256n64k*, which cu13 rejects (cu12 was historically lenient).
+        mma_shape_m = 256
+        mma_shape_n = 64
         mma_shape_k = 256 // dtypes.DataType.from_str(dtype).num_bits
 
     if "float" in dtype:
