@@ -75,6 +75,23 @@ def get_triton_moe_config(num_experts, shape_n, shape_k, shape_m, top_k,
                               is_marlin=False, block_shape=block_shape)
 
 
+def prepare_tma_down_inputs(inputs, sorted_token_ids, num_tokens_post_padded):
+    """Build the sorted/padded A layout expected by SGLang's TMA down kernel."""
+    padded_rows = int(num_tokens_post_padded.item())
+    if inputs.shape[0] == padded_rows:
+        return inputs
+
+    tma_inputs = torch.zeros(
+        (padded_rows, inputs.shape[1]), dtype=inputs.dtype, device=inputs.device
+    )
+    valid_mask = sorted_token_ids < inputs.shape[0]
+    dst_ids = torch.arange(
+        sorted_token_ids.numel(), device=inputs.device, dtype=torch.long
+    )
+    tma_inputs[dst_ids[valid_mask]] = inputs[sorted_token_ids[valid_mask].long()]
+    return tma_inputs
+
+
 def bench_triton_moe(shape_n, shape_k, num_experts, top_k, is_moe_down,
                      weight_dtype, act_dtype, out_dtype,
                      block_shape=None, balanced=False, shape_m_list=None):
@@ -120,10 +137,15 @@ def bench_triton_moe(shape_n, shape_k, num_experts, top_k, is_moe_down,
         )
         topk_weights = torch.ones((shape_m, top_k), dtype=torch.float32, device="cuda:0")
 
+        kernel_inputs = (
+            prepare_tma_down_inputs(inputs, sorted_ids, num_tokens_padded)
+            if use_tma else inputs
+        )
+
         def run():
             outputs = torch.empty((shape_m, top_k, shape_n), dtype=act_torch_dtype, device="cuda:0")
             invoke_fused_moe_kernel(
-                A=inputs, B=weight, bias=None, C=outputs,
+                A=kernel_inputs, B=weight, bias=None, C=outputs,
                 A_scale=None, B_scale=weight_scale, B_zp=None,
                 topk_weights=topk_weights, topk_ids=topk_ids_full,
                 sorted_token_ids=sorted_ids, expert_ids=expert_ids,
@@ -147,7 +169,7 @@ def bench_triton_moe(shape_n, shape_k, num_experts, top_k, is_moe_down,
         t = triton.testing.do_bench(run, warmup=100, rep=1000)
 
         num_actived = len(set(expert_ids.tolist()))
-        nbytes = inputs.nbytes + outputs.nbytes
+        nbytes = kernel_inputs.nbytes + outputs.nbytes
         nbytes += weight.nbytes // num_experts * num_actived
         if weight_scale is not None:
             nbytes += weight_scale.nbytes // num_experts * num_actived
