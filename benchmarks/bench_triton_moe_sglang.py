@@ -171,6 +171,8 @@ def main():
         shape_m_list=args.shape_m_list,
     )
     if args.output_file:
+        # save_benchmark_result reads `a_dtype` for the tops_bench peak-TOPS probe.
+        args.a_dtype = args.weight_dtype
         save_benchmark_result(res, args, packages=["sglang", "triton"])
     print("\nshape_m | time(ms) | mem GB/s | TFLOPS")
     for r in res:
