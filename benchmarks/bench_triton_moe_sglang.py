@@ -70,12 +70,6 @@ def get_triton_moe_config(num_experts, shape_n, shape_k, shape_m, top_k,
                                    down_moe=is_moe_down)
     if configs is not None:
         cfg = dict(configs[min(configs.keys(), key=lambda x: abs(x - shape_m))])
-        # _down configs (newer tuning) carry USE_TMA / similar keys that this
-        # sglang's fused_moe_kernel doesn't declare; strip them so triton's
-        # **kwargs unpack doesn't KeyError. Core tuning (BLOCK_SIZE_M/N/K,
-        # GROUP_SIZE_M, num_warps, num_stages) is preserved.
-        for unknown in ("USE_TMA",):
-            cfg.pop(unknown, None)
         return cfg
     return get_default_config(shape_m, num_experts, shape_n, shape_k, top_k, dtype,
                               is_marlin=False, block_shape=block_shape)
@@ -115,6 +109,11 @@ def bench_triton_moe(shape_n, shape_k, num_experts, top_k, is_moe_down,
         torch.cuda.manual_seed(shape_m)
         config = get_triton_moe_config(num_experts, shape_n, shape_k, shape_m, top_k,
                                         is_moe_down, block_shape, weight_torch_dtype)
+        # _down tuning stores USE_TMA=true; sglang itself pops it and forwards
+        # to a_use_tma/b_use_tma (sglang/.../fused_moe.py:381-385, 655-656).
+        # Mirror that, otherwise triton kernel sees USE_TMA as an unknown
+        # constexpr and KeyErrors.
+        use_tma = bool(config.pop("USE_TMA", False)) and is_moe_down
         topk_ids_full, _, sorted_ids, expert_ids, num_tokens_padded = generate_random_moe_tensors(
             shape_m=shape_m, num_experts=num_experts, top_k=top_k,
             balanced=balanced, block_size_config=config["BLOCK_SIZE_M"],
@@ -138,6 +137,8 @@ def bench_triton_moe(shape_n, shape_k, num_experts, top_k, is_moe_down,
                 use_int8_w8a16=False, use_int4_w4a16=False,
                 per_channel_quant=(block_shape is None),
                 block_shape=block_shape,
+                a_use_tma=use_tma, b_use_tma=use_tma,
+                router_topk=top_k if is_moe_down else 1,
             )
             return outputs
 
