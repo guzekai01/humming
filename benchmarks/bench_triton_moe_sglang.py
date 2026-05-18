@@ -55,12 +55,19 @@ def get_triton_moe_config(num_experts, shape_n, shape_k, shape_m, top_k,
     else:
         shape_n, shape_k = shape_k, shape_n
 
+    # sglang stores up-proj configs as `..._N=...,block_shape=...json` and
+    # down-proj configs as `..._down.json`. Pass `down_moe` so it picks the
+    # right suffix; if no _down file exists sglang returns None and we fall
+    # back to get_default_config (NOT silently to the up-proj tuning).
     if block_shape is None:
-        configs = get_moe_configs(num_experts, shape_n, dtype)
+        configs = get_moe_configs(num_experts, shape_n, dtype, down_moe=is_moe_down)
     else:
-        configs = get_moe_configs(num_experts, shape_n, dtype, block_shape[0], block_shape[1])
+        configs = get_moe_configs(num_experts, shape_n, dtype,
+                                   block_shape[0], block_shape[1],
+                                   down_moe=is_moe_down)
     if configs is None and block_shape is None:
-        configs = get_moe_configs(num_experts, shape_n, dtype, 128, 128)
+        configs = get_moe_configs(num_experts, shape_n, dtype, 128, 128,
+                                   down_moe=is_moe_down)
     if configs is not None:
         return configs[min(configs.keys(), key=lambda x: abs(x - shape_m))]
     return get_default_config(shape_m, num_experts, shape_n, shape_k, top_k, dtype,
