@@ -14,10 +14,21 @@ Differences from benchmarks/bench_triton_moe.py:
 """
 
 import argparse
+from types import SimpleNamespace
+
 import torch
 import triton
 import triton.language as tl
 from tqdm import tqdm
+
+# sglang reads global server args inside MoE config / kernel paths; stub it
+# before any sglang module pulls it, to avoid `Global server args is not set yet!`.
+import sglang.srt.server_args as _sa
+_sa._global_server_args = SimpleNamespace(
+    enable_deterministic_inference=False,
+    enable_torch_compile=False,
+    moe_runner_backend="triton",
+)
 
 from sglang.srt.layers.moe.moe_runner.triton_utils.fused_moe_triton_kernels import (
     invoke_fused_moe_kernel,
