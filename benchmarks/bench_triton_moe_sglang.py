@@ -69,7 +69,14 @@ def get_triton_moe_config(num_experts, shape_n, shape_k, shape_m, top_k,
         configs = get_moe_configs(num_experts, shape_n, dtype, 128, 128,
                                    down_moe=is_moe_down)
     if configs is not None:
-        return configs[min(configs.keys(), key=lambda x: abs(x - shape_m))]
+        cfg = dict(configs[min(configs.keys(), key=lambda x: abs(x - shape_m))])
+        # _down configs (newer tuning) carry USE_TMA / similar keys that this
+        # sglang's fused_moe_kernel doesn't declare; strip them so triton's
+        # **kwargs unpack doesn't KeyError. Core tuning (BLOCK_SIZE_M/N/K,
+        # GROUP_SIZE_M, num_warps, num_stages) is preserved.
+        for unknown in ("USE_TMA",):
+            cfg.pop(unknown, None)
+        return cfg
     return get_default_config(shape_m, num_experts, shape_n, shape_k, top_k, dtype,
                               is_marlin=False, block_shape=block_shape)
 
