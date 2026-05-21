@@ -94,7 +94,8 @@ def prepare_tma_down_inputs(inputs, sorted_token_ids, num_tokens_post_padded):
 
 def bench_triton_moe(shape_n, shape_k, num_experts, top_k, is_moe_down,
                      weight_dtype, act_dtype, out_dtype,
-                     block_shape=None, balanced=False, shape_m_list=None):
+                     block_shape=None, balanced=False, shape_m_list=None,
+                     tma_gather_in_run=False):
     if isinstance(block_shape, str):
         block_shape = [int(x) for x in block_shape.split("x")]
     weight_torch_dtype = {"int8": torch.int8, "float8e4m3": torch.float8_e4m3fn,
@@ -137,12 +138,22 @@ def bench_triton_moe(shape_n, shape_k, num_experts, top_k, is_moe_down,
         )
         topk_weights = torch.ones((shape_m, top_k), dtype=torch.float32, device="cuda:0")
 
-        kernel_inputs = (
+        pregathered = (
             prepare_tma_down_inputs(inputs, sorted_ids, num_tokens_padded)
             if use_tma else inputs
         )
 
         def run():
+            # The TMA down kernel needs A pre-sorted into the padded layout. By
+            # default that gather is built once outside the timed region; but
+            # humming's INDEXED down kernel does the equivalent token gather
+            # *inside* the kernel (timed). --tma-gather-in-run rebuilds the sorted
+            # layout inside run() so the triton number is an apples-to-apples
+            # gather+gemm cost.
+            kernel_inputs = (
+                prepare_tma_down_inputs(inputs, sorted_ids, num_tokens_padded)
+                if (use_tma and tma_gather_in_run) else pregathered
+            )
             outputs = torch.empty((shape_m, top_k, shape_n), dtype=act_torch_dtype, device="cuda:0")
             invoke_fused_moe_kernel(
                 A=kernel_inputs, B=weight, bias=None, C=outputs,
@@ -169,7 +180,7 @@ def bench_triton_moe(shape_n, shape_k, num_experts, top_k, is_moe_down,
         t = triton.testing.do_bench(run, warmup=100, rep=1000)
 
         num_actived = len(set(expert_ids.tolist()))
-        nbytes = kernel_inputs.nbytes + outputs.nbytes
+        nbytes = pregathered.nbytes + outputs.nbytes
         nbytes += weight.nbytes // num_experts * num_actived
         if weight_scale is not None:
             nbytes += weight_scale.nbytes // num_experts * num_actived
@@ -197,6 +208,10 @@ def main():
     p.add_argument("--shape_m_list", type=int, nargs="+", default=None)
     p.add_argument("--block_shape", type=str, default=None)
     p.add_argument("--output_file", type=str, default=None)
+    p.add_argument("--tma-gather-in-run", dest="tma_gather_in_run",
+                   default=False, action="store_true",
+                   help="time the TMA sorted-A gather inside run() (apples-to-apples "
+                        "vs humming's in-kernel INDEXED gather)")
     args = p.parse_args()
 
     res = bench_triton_moe(
@@ -206,6 +221,7 @@ def main():
         weight_dtype=args.weight_dtype, act_dtype=args.act_dtype, out_dtype=args.out_dtype,
         block_shape=args.block_shape, balanced=args.balanced,
         shape_m_list=args.shape_m_list,
+        tma_gather_in_run=args.tma_gather_in_run,
     )
     if args.output_file:
         # save_benchmark_result reads `a_dtype` for the tops_bench peak-TOPS probe.
