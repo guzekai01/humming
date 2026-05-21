@@ -203,14 +203,16 @@ class Sm90H20Heuristics(DeviceHeuristics):
             # kernel recompile, GEMM result bit-identical. Coarse shape_m thresholds
             # keep the bucket table from fragmenting.
             #
-            # Applies only to routed M in [24576, 262144]. Below 24k the default is
-            # already best; above ~262k the GEMM is deeply compute-bound and the
-            # per-tile overhead amortises anyway, so the persistent grid (which
-            # maximises L2 weight reuse) wins again. Measured on H20-3e (N=4096,
-            # K=256, E=256, top_k=8): -2.1%..-3.7% inside the window, vs a +1.9%
-            # regression at routed M=1M if left uncapped. Skipped when a prior
-            # heuristic already pinned the grid (num_ctas_per_sm == 1).
-            if config["num_ctas_per_sm"] > 1 and 24576 <= shape_m <= 262144:
+            # shape_m is the routed token count. The MoE bucket table tops out at
+            # routed 65536 (get_configs max_shape_m), so the last bucket [~65k, inf)
+            # carries num_sms=2048 — optimal for its realistic operating point:
+            # chunked prefill is <=8192 tokens -> routed <=65536. Measured on H20-3e
+            # (N=4096, K=256, E=256, top_k=8): routed 32k -1.8%, 64k -3.7%, 128k
+            # -3.9%, 256k -3.3%. A synthetic single 131072-token down-gemm (routed
+            # 1M, which chunked prefill never produces) is mildly grid-oversubscribed
+            # (+1.8%) — an unreachable regime. Skipped when a prior heuristic already
+            # pinned the grid (num_ctas_per_sm == 1).
+            if config["num_ctas_per_sm"] > 1 and shape_m >= 24576:
                 config["num_sms"] = max(
                     config["num_sms"], 2048 if shape_m >= 49152 else 1024
                 )
