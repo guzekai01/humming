@@ -201,15 +201,19 @@ class Sm90H20Heuristics(DeviceHeuristics):
             # across tiles. A larger grid (~5 tiles/CTA) lets the hardware overlap
             # tile boundaries across waves. num_sms is a launch parameter only — no
             # kernel recompile, GEMM result bit-identical. Coarse shape_m thresholds
-            # keep the bucket table from fragmenting. Measured on H20-3e (N=4096,
-            # K=256, E=256, top_k=8): -3.2% at routed M=64k, -1.7% at 32k, neutral
-            # below 24k (default kept there). Skipped when a prior heuristic already
-            # pinned the grid (num_ctas_per_sm == 1 caps num_sms deliberately).
-            if config["num_ctas_per_sm"] > 1:
-                if shape_m >= 49152:
-                    config["num_sms"] = max(config["num_sms"], 2048)
-                elif shape_m >= 24576:
-                    config["num_sms"] = max(config["num_sms"], 1024)
+            # keep the bucket table from fragmenting.
+            #
+            # Applies only to routed M in [24576, 262144]. Below 24k the default is
+            # already best; above ~262k the GEMM is deeply compute-bound and the
+            # per-tile overhead amortises anyway, so the persistent grid (which
+            # maximises L2 weight reuse) wins again. Measured on H20-3e (N=4096,
+            # K=256, E=256, top_k=8): -2.1%..-3.7% inside the window, vs a +1.9%
+            # regression at routed M=1M if left uncapped. Skipped when a prior
+            # heuristic already pinned the grid (num_ctas_per_sm == 1).
+            if config["num_ctas_per_sm"] > 1 and 24576 <= shape_m <= 262144:
+                config["num_sms"] = max(
+                    config["num_sms"], 2048 if shape_m >= 49152 else 1024
+                )
 
         if block_shape_m >= 48 and num_ctas_per_sm <= 2 and num_warps <= 8 and not is_moe:
             config["use_tma"] = True
