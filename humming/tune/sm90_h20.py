@@ -195,6 +195,22 @@ class Sm90H20Heuristics(DeviceHeuristics):
                 config["use_tma_a"] = False
                 config["use_tma_c"] = False
 
+            # Small-K MoE down-gemm grid sizing. The default fully-persistent grid
+            # (num_sms = SM count) leaves each CTA processing ~70 output tiles, so
+            # the per-tile prologue load / epilogue is exposed and never overlapped
+            # across tiles. A larger grid (~5 tiles/CTA) lets the hardware overlap
+            # tile boundaries across waves. num_sms is a launch parameter only — no
+            # kernel recompile, GEMM result bit-identical. Coarse shape_m thresholds
+            # keep the bucket table from fragmenting. Measured on H20-3e (N=4096,
+            # K=256, E=256, top_k=8): -3.2% at routed M=64k, -1.7% at 32k, neutral
+            # below 24k (default kept there). Skipped when a prior heuristic already
+            # pinned the grid (num_ctas_per_sm == 1 caps num_sms deliberately).
+            if config["num_ctas_per_sm"] > 1:
+                if shape_m >= 49152:
+                    config["num_sms"] = max(config["num_sms"], 2048)
+                elif shape_m >= 24576:
+                    config["num_sms"] = max(config["num_sms"], 1024)
+
         if block_shape_m >= 48 and num_ctas_per_sm <= 2 and num_warps <= 8 and not is_moe:
             config["use_tma"] = True
             config["use_warp_spec"] = True
