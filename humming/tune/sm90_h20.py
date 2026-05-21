@@ -203,15 +203,17 @@ class Sm90H20Heuristics(DeviceHeuristics):
             # kernel recompile, GEMM result bit-identical. Coarse shape_m thresholds
             # keep the bucket table from fragmenting.
             #
-            # shape_m is the routed token count. The MoE bucket table tops out at
-            # routed 65536 (get_configs max_shape_m), so the last bucket [~65k, inf)
-            # carries num_sms=2048 — optimal for its realistic operating point:
-            # chunked prefill is <=8192 tokens -> routed <=65536. Measured on H20-3e
-            # (N=4096, K=256, E=256, top_k=8): routed 32k -1.8%, 64k -3.7%, 128k
-            # -3.9%, 256k -3.3%. A synthetic single 131072-token down-gemm (routed
-            # 1M, which chunked prefill never produces) is mildly grid-oversubscribed
-            # (+1.8%) — an unreachable regime. Skipped when a prior heuristic already
-            # pinned the grid (num_ctas_per_sm == 1).
+            # shape_m is the routed token count. Validated on H20-3e for DSV4
+            # (top_k=6): DSV4-Flash (N=4096, K=256, E=256) routed 24576 -2.0%,
+            # 49152 -2.9%, 98304 -3.7%; DSV4-Pro (N=7168, K=384, E=384) routed
+            # 24576 -2.2%, 49152 -3.6%, 98304 -2.5%. The 1024/2048 values are
+            # near-optimal for both N at routed <= 49152 (the realistic prefill
+            # range — chunked prefill is <= 8192 tokens). The MoE bucket table tops
+            # out at routed 65536, so the last bucket [~65k, inf) keeps num_sms=
+            # 2048; a synthetic single >65k-token down-gemm (which chunked prefill
+            # never produces) is then mildly grid-oversubscribed — unreachable.
+            # Skipped when a prior heuristic already pinned the grid
+            # (num_ctas_per_sm == 1).
             if config["num_ctas_per_sm"] > 1 and shape_m >= 24576:
                 config["num_sms"] = max(
                     config["num_sms"], 2048 if shape_m >= 49152 else 1024
