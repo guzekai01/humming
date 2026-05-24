@@ -1,3 +1,4 @@
+import contextlib
 import os
 import subprocess
 import sys
@@ -9,7 +10,6 @@ import torch.utils.cpp_extension
 from filelock import FileLock
 
 import humming.utils.jit as jit_utils
-from humming import dtypes
 from humming.utils.cuda import filter_cuda_paths
 
 _libs = {}
@@ -34,7 +34,20 @@ def register_op(
     _lib.define(op_name + schema_str)
     _lib.impl(op_name, impl_func, dispatch_key="CUDA")
     if fake_impl_func is not None:
-        _lib._register_fake(op_name, fake_impl_func)
+        with _shield_lazy_modules():
+            _lib._register_fake(op_name, fake_impl_func)
+
+
+@contextlib.contextmanager
+def _shield_lazy_modules():
+    saved = {}
+    for name, mod in list(sys.modules.items()):
+        if mod is not None and type(mod).__name__ == "_LazyModule":
+            saved[name] = sys.modules.pop(name)
+    try:
+        yield
+    finally:
+        sys.modules.update(saved)
 
 
 def get_humming_launcher_build_dir(use_torch_stable_api: bool):
