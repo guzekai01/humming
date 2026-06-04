@@ -133,6 +133,10 @@ class HummingLayerMeta(LayerConfig):
                 and self.weight_scale_group_size > 0
                 and self.b_dtype in [dtypes.float4e2m1]
                 and self.bs_dtype in [dtypes.float8e8m0]
+                # Grouped FP8 input (e.g. DeepEP 1x128 dispatch) is incompatible with
+                # fused E8M0: the grouped input scale is dropped on the fused C path.
+                # Fall to non-fused so the input group scale is applied.
+                and self.input_scale_group_size == 0
             )
 
         if not self.use_int_weight_scale and not self.use_fused_e8m0_scale:

@@ -103,3 +103,30 @@ def test_fp8_dispatch(mma_type, c_dtype, input_scale_group_size, weight_scale_gr
 
     outputs_ref = inputs_ref.matmul(weight_ref.T).to(torch_dtype)
     torch.testing.assert_close(outputs, outputs_ref, rtol=0.05, atol=0.5)
+
+
+@pytest.mark.parametrize("input_scale_group_size, expect_fused", [(0, True), (128, False)])
+def test_fp8_dispatch_auto_fuse_toggle(input_scale_group_size, expect_fused):
+    """MXFP4 W4A8 auto-selects fused E8M0 only for per-token input (group 0).
+
+    Grouped FP8 input (DeepEP 1x128 dispatch) must fall to non-fused so the grouped
+    input scale is applied; that path uses GROUP weight scale (no per-tensor global),
+    whereas the fused per-token path uses GROUP_TENSOR.
+    """
+    from humming.layer import HummingLayerMeta
+
+    meta = HummingLayerMeta(
+        shape_n=1024,
+        shape_k=1024,
+        a_dtype=dtypes.float8e4m3,
+        b_dtype=dtypes.float4e2m1,
+        c_dtype=dtypes.bfloat16,
+        bs_dtype=dtypes.float8e8m0,
+        weight_scale_group_size=32,
+        input_scale_group_size=input_scale_group_size,
+        mma_type="wgmma",
+    )
+    assert meta.use_fused_e8m0_scale == expect_fused
+    assert meta.is_group_weight_scale is True
+    # GROUP_TENSOR (per-tensor global) only on the fused per-token path.
+    assert meta.is_tensor_weight_scale == expect_fused
