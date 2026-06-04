@@ -483,7 +483,10 @@ class HummingLayerMethod:
             inputs=inputs,
             outputs=quanted_input,
             dtype=str(meta.a_dtype),
-            group_size=None,
+            # Match the sublayer's input scale group so a locally-quantized input
+            # agrees with the kernel meta (e.g. w13 group-128 under FP8 dispatch;
+            # decode supplies the scale and short-circuits above). 0 => per-token.
+            group_size=meta.input_scale_group_size or None,
         )
         return quanted_input, (input_scale if input_scale.numel() else None)
 
