@@ -87,7 +87,7 @@ class KernelRuntime:
             kernel_expr=kernel_expr,
             disable_fast_math=self.disable_fast_math,
         )
-        kernel_name = jit_utils.find_kernel_name_in_cubin(kernel_filename, self.name)
+        kernel_name = jit_utils.find_kernel_name_in_cubin_cached(kernel_filename, self.name)
         self.kernel_name = kernel_name
         self.kernel_filename = kernel_filename
         if threading.current_thread() is threading.main_thread():
