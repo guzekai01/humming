@@ -391,6 +391,7 @@ def _run_search(
         progress_log_path=progress_log_path,
         topk=_MEASURE_TOPK,
         num_spares=num_spares,
+        device_index=device,
     ) as measurer:
         for shape_m in shape_m_values:
             baseline = get_heuristics_config(
@@ -562,6 +563,7 @@ def tune_and_save(
     cache_dir = kw.pop("cache_dir", None)
     meta = _normalize_meta(meta)
     gemm_type = _normalize_gemm_type(gemm_type)
+    shape_m_values = _shape_m_values(shape_m_list)
     flags = _make_flags(
         kw.get("use_f16_accum", False),
         kw.get("use_batch_invariant", False),
@@ -570,11 +572,19 @@ def tune_and_save(
     table = search(
         meta,
         gemm_type,
-        shape_m_list,
+        shape_m_values,
         reverify_winners=reverify_winners,
         verify_bucket_interiors=verify_bucket_interiors,
         **kw,
     )
     fingerprint = cache.current_fingerprint(kw.get("device"))
-    path = cache.save_table(meta, gemm_type, flags, fingerprint, table, cache_dir=cache_dir)
+    path = cache.save_table(
+        meta,
+        gemm_type,
+        flags,
+        fingerprint,
+        table,
+        cache_dir=cache_dir,
+        shape_m_list=shape_m_values,
+    )
     return table, path

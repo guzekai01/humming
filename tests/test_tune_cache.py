@@ -4,7 +4,12 @@ from pathlib import Path
 import pytest
 
 from humming.config import GemmType
-from humming.tune.cache import load_table, make_cache_key, save_table
+from humming.tune.cache import (
+    load_saved_shape_m_list,
+    load_table,
+    make_cache_key,
+    save_table,
+)
 
 
 class _FakeMeta:
@@ -74,6 +79,72 @@ def test_round_trip_restores_nested_config_tuples(tmp_path):
     cfg = loaded[0][2]
     assert type(cfg["block_shape"]) is tuple
     assert type(cfg["warp_shape"]) is tuple
+
+
+def test_saved_shape_m_list_round_trip(tmp_path):
+    meta = _FakeMeta()
+    flags = _flags()
+    shape_m_list = [8, 64, 512]
+
+    path = save_table(
+        meta,
+        GemmType.DENSE,
+        flags,
+        FINGERPRINT,
+        _table(),
+        cache_dir=str(tmp_path),
+        shape_m_list=shape_m_list,
+    )
+
+    payload = json.loads(Path(path).read_text(encoding="utf-8"))
+    assert payload["_shape_m_list"] == shape_m_list
+    assert (
+        load_saved_shape_m_list(
+            meta,
+            GemmType.DENSE,
+            flags,
+            FINGERPRINT,
+            cache_dir=str(tmp_path),
+        )
+        == shape_m_list
+    )
+
+
+def test_old_payload_has_no_saved_shape_m_list(tmp_path):
+    meta = _FakeMeta()
+    flags = _flags()
+    path = Path(
+        save_table(
+            meta,
+            GemmType.DENSE,
+            flags,
+            FINGERPRINT,
+            _table(),
+            cache_dir=str(tmp_path),
+            shape_m_list=[64, 256],
+        )
+    )
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    del payload["_shape_m_list"]
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+    assert (
+        load_saved_shape_m_list(
+            meta,
+            GemmType.DENSE,
+            flags,
+            FINGERPRINT,
+            cache_dir=str(tmp_path),
+        )
+        is None
+    )
+    assert load_table(
+        meta,
+        GemmType.DENSE,
+        flags,
+        FINGERPRINT,
+        cache_dir=str(tmp_path),
+    ) == _table()
 
 
 @pytest.mark.parametrize(

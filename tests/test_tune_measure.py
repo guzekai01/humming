@@ -1,4 +1,5 @@
 import json
+import os
 
 import pytest
 
@@ -47,7 +48,7 @@ class _FakeWorker:
     #: set by each test before Measurer construction
     script = {}
 
-    def __init__(self, args_dict, num_spares):
+    def __init__(self, args_dict, num_spares, device_index=None):
         self.respawn_count = 0
 
     def request(self, msg, timeout):
@@ -156,3 +157,55 @@ def test_worker_death_twice_marks_globally_broken(fake_worker, tmp_path):
 def test_rejects_unsupported_gemm_type(tmp_path):
     with pytest.raises(ValueError, match="unsupported gemm_type"):
         Measurer(LAYER_ARGS, "grouped_contiguous", progress_log_path=str(tmp_path / "p.log"))
+
+
+def test_bench_worker_pins_spawn_device_and_restores_environment(monkeypatch):
+    spawn_environments = []
+
+    class FakeProcess:
+        def start(self):
+            spawn_environments.append(os.environ.get("CUDA_VISIBLE_DEVICES"))
+
+    class FakeContext:
+        @staticmethod
+        def Queue():
+            return object()
+
+        @staticmethod
+        def Process(**kwargs):
+            return FakeProcess()
+
+    monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "original")
+    worker = measure._BenchWorker(LAYER_ARGS, num_spares=0, device_index=3)
+    worker._ctx = FakeContext()
+
+    worker._spawn_handle()
+
+    assert spawn_environments == ["3"]
+    assert os.environ["CUDA_VISIBLE_DEVICES"] == "original"
+
+
+def test_bench_worker_without_device_keeps_spawn_environment(monkeypatch):
+    spawn_environments = []
+
+    class FakeProcess:
+        def start(self):
+            spawn_environments.append(os.environ.get("CUDA_VISIBLE_DEVICES"))
+
+    class FakeContext:
+        @staticmethod
+        def Queue():
+            return object()
+
+        @staticmethod
+        def Process(**kwargs):
+            return FakeProcess()
+
+    monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "original")
+    worker = measure._BenchWorker(LAYER_ARGS, num_spares=0)
+    worker._ctx = FakeContext()
+
+    worker._spawn_handle()
+
+    assert spawn_environments == ["original"]
+    assert os.environ["CUDA_VISIBLE_DEVICES"] == "original"

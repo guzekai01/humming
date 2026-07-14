@@ -135,7 +135,7 @@ def write_output(path: str, payload: dict) -> None:
 def main() -> None:
     from humming.tune import cache
     from humming.tune._worker import create_layer
-    from humming.tune.measured import _make_flags, _run_search
+    from humming.tune.measured import _make_flags, _run_search, _shape_m_values
 
     args = parse_args()
     gemm_type = GemmType(args.gemm_type)
@@ -145,10 +145,11 @@ def main() -> None:
     sublayer_name = ""
     meta = layer.humming_metas[sublayer_name]
 
+    shape_m_values = _shape_m_values(args.shape_m_list)
     table, per_m = _run_search(
         meta,
         gemm_type,
-        args.shape_m_list,
+        shape_m_values,
         top_k=args.top_k,
         is_moe_down=args.is_moe_down,
         balanced=args.balanced,
@@ -161,7 +162,14 @@ def main() -> None:
     if not args.no_save:
         flags = _make_flags(False, False, False)
         fingerprint = cache.current_fingerprint()
-        cache_path = cache.save_table(meta, gemm_type, flags, fingerprint, table)
+        cache_path = cache.save_table(
+            meta,
+            gemm_type,
+            flags,
+            fingerprint,
+            table,
+            shape_m_list=shape_m_values,
+        )
         print(f"saved: {cache_path}")
 
     if args.output is not None:
@@ -179,4 +187,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

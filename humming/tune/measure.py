@@ -77,9 +77,10 @@ class _ProgressLog:
 
 
 class _BenchWorker:
-    def __init__(self, args_dict: dict, num_spares: int):
+    def __init__(self, args_dict: dict, num_spares: int, device_index=None):
         self._args_dict = dict(args_dict)
         self._num_spares = num_spares
+        self._device_index = device_index
         self._ctx = multiprocessing.get_context("spawn")
         self.respawn_count = -1
         self._active = None
@@ -93,7 +94,20 @@ class _BenchWorker:
             args=(self._args_dict, cmd_q, res_q),
             daemon=True,
         )
-        proc.start()
+        if self._device_index is None:
+            proc.start()
+        else:
+            env_name = "CUDA_VISIBLE_DEVICES"
+            had_value = env_name in os.environ
+            previous_value = os.environ.get(env_name)
+            os.environ[env_name] = str(self._device_index)
+            try:
+                proc.start()
+            finally:
+                if had_value:
+                    os.environ[env_name] = previous_value
+                else:
+                    os.environ.pop(env_name, None)
         return {"proc": proc, "cmd_q": cmd_q, "res_q": res_q, "ready": False}
 
     def _wait_result(self, handle, timeout):
@@ -338,6 +352,7 @@ class Measurer:
         fine_rep_ms=500,
         topk=8,
         num_spares=2,
+        device_index=None,
     ):
         if coarse_rep_ms <= 0 or fine_rep_ms <= 0:
             raise ValueError("coarse_rep_ms and fine_rep_ms must be positive")
@@ -356,7 +371,9 @@ class Measurer:
         self._death_counts = {}
         self._globally_broken_keys = set()
         self._progress = _ProgressLog(progress_log_path)
-        self._worker = _BenchWorker(self._layer_args, num_spares)
+        self._worker = _BenchWorker(
+            self._layer_args, num_spares, device_index=device_index
+        )
         self._closed = False
 
     def measure(self, req: MeasureRequest) -> list[ConfigTiming]:

@@ -90,14 +90,13 @@ def _restore_table(table: list) -> list:
     return restored
 
 
-def load_table(
+def _load_valid_payload(
     meta: "HummingLayerMeta",
     gemm_type: "GemmType",
     flags: dict,
     fingerprint: dict,
     cache_dir: str | None = None,
-) -> list | None:
-    """Return a cache table only when metadata and fingerprint match exactly."""
+) -> dict | None:
     filename = _make_cache_filename(meta, gemm_type, flags, cache_dir)
     try:
         with open(filename, encoding="utf-8") as f:
@@ -124,11 +123,48 @@ def load_table(
         _LOGGER.debug("tune cache flags mismatch: %s", filename)
         return None
 
+    return payload
+
+
+def load_table(
+    meta: "HummingLayerMeta",
+    gemm_type: "GemmType",
+    flags: dict,
+    fingerprint: dict,
+    cache_dir: str | None = None,
+) -> list | None:
+    """Return a cache table only when metadata and fingerprint match exactly."""
+    payload = _load_valid_payload(meta, gemm_type, flags, fingerprint, cache_dir)
+    if payload is None:
+        return None
+
     try:
         return _restore_table(payload["table"])
     except (KeyError, TypeError, IndexError):
+        filename = _make_cache_filename(meta, gemm_type, flags, cache_dir)
         _LOGGER.debug("tune cache table restore failed: %s", filename)
         return None
+
+
+def load_saved_shape_m_list(
+    meta: "HummingLayerMeta",
+    gemm_type: "GemmType",
+    flags: dict,
+    fingerprint: dict,
+    cache_dir: str | None = None,
+) -> list | None:
+    """Return the grid saved with a valid tuning cache, if one is recorded."""
+    payload = _load_valid_payload(meta, gemm_type, flags, fingerprint, cache_dir)
+    if payload is None:
+        return None
+
+    shape_m_list = payload.get("_shape_m_list")
+    if not isinstance(shape_m_list, list) or not all(
+        isinstance(shape_m, int) and not isinstance(shape_m, bool)
+        for shape_m in shape_m_list
+    ):
+        return None
+    return list(shape_m_list)
 
 
 def save_table(
@@ -138,6 +174,7 @@ def save_table(
     fingerprint: dict,
     table: list,
     cache_dir: str | None = None,
+    shape_m_list: list[int] | None = None,
 ) -> str:
     dirname = _get_tune_cache_dir(cache_dir)
     os.makedirs(dirname, exist_ok=True)
@@ -147,6 +184,7 @@ def save_table(
         "_meta_str": _cache_meta_str(meta),
         "_gemm_type": gemm_type.value,
         "_flags": _normalize_flags(flags),
+        "_shape_m_list": None if shape_m_list is None else list(shape_m_list),
         "table": table,
         "_created_at": datetime.now(timezone.utc).isoformat(),
     }
