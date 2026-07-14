@@ -1,4 +1,5 @@
 import functools
+import os
 from typing import TYPE_CHECKING
 
 import torch
@@ -114,3 +115,58 @@ def get_heuristics_config(
             _apply_m_major_input_scale(entry[2], use_m_major_input_scale, meta, gemm_type)
             _apply_raster_group_m(entry[2], meta, gemm_type)
         return configs
+
+
+def get_tuning_config(
+    meta: "HummingLayerMeta | dict",
+    shape_m: int | None = None,
+    *,
+    use_f16_accum: bool = False,
+    use_batch_invariant: bool = False,
+    use_m_major_input_scale: bool = False,
+    gemm_type: str | GemmType = "dense",
+    use_measured: bool | None = None,
+):
+    if use_measured is None:
+        env_value = os.getenv("HUMMING_USE_MEASURED", "1").lower()
+        use_measured = env_value not in ("0", "false")
+
+    if not use_measured:
+        return get_heuristics_config(
+            meta,
+            shape_m,
+            use_f16_accum,
+            use_batch_invariant,
+            use_m_major_input_scale,
+            gemm_type,
+        )
+
+    from humming.layer import HummingLayerMeta
+    from humming.tune import cache
+
+    if isinstance(gemm_type, str):
+        gemm_type = GemmType(gemm_type)
+    if isinstance(meta, dict):
+        meta = HummingLayerMeta(**meta)
+
+    flags = {
+        "use_f16_accum": use_f16_accum,
+        "use_batch_invariant": use_batch_invariant,
+        "use_m_major_input_scale": use_m_major_input_scale,
+    }
+    table = cache.load_table(meta, gemm_type, flags, cache.current_fingerprint())
+    if table is not None:
+        if shape_m is None:
+            return table
+        for min_shape_m, max_shape_m, config in table:
+            if shape_m > min_shape_m and shape_m <= max_shape_m:
+                return config
+
+    return get_heuristics_config(
+        meta,
+        shape_m,
+        use_f16_accum,
+        use_batch_invariant,
+        use_m_major_input_scale,
+        gemm_type,
+    )
