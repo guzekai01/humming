@@ -63,25 +63,6 @@ def _wn64_8bit_broken(meta: "HummingLayerMeta", gemm_type: GemmType, config: dic
     return warp_n == 64 and meta.a_dtype.num_bits <= 8
 
 
-def _bn256_bk64_wk64_8bit_broken(
-    meta: "HummingLayerMeta",
-    gemm_type: GemmType,
-    config: dict,
-) -> bool:
-    _, block_n, block_k = config["block_shape"]
-    _, _, warp_k = config["warp_shape"]
-    # H20 config-duel (identical-input comparison after the worker RNG fix):
-    # block[48,256,64]/warp[48,32,64] still mismatches deterministically at
-    # m=2048/4096/8192/65536, while the bn=128 member block[48,128,64]/
-    # warp[48,32,64] is correct (and ~2.8x faster than the heuristic at
-    # m=2048). Only the bn=256 variant is measured-broken.
-    return (
-        block_n == 256
-        and block_k == 64
-        and warp_k == 64
-        and meta.a_dtype.num_bits == 8
-    )
-
 
 _BROKEN_FAMILIES = (
     ("moe-warp-spec", "moe-warp-spec: livelock", _moe_warp_spec_broken),
@@ -92,7 +73,6 @@ _BROKEN_FAMILIES = (
     ),
     ("bn64-small-bm", "bn64-small-bm: sticky illegal instruction", _bn64_small_bm_broken),
     ("wn64-8bit", "wn64-8bit: sticky illegal instruction", _wn64_8bit_broken),
-    ("bn256-bk64-wk64-8bit", "bn256-bk64-wk64-8bit-wrong-result", _bn256_bk64_wk64_8bit_broken),
 )
 
 
