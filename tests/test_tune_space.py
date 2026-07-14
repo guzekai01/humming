@@ -105,13 +105,22 @@ def test_broken_families():
         assert Sm90H20SearchSpace.broken_reason(meta, gemm_type, config) is None, f"{config=}"
 
 
-def test_bk64_wk64_8bit_broken_family_boundaries():
+def test_bn256_bk64_wk64_8bit_broken_family_boundaries():
     fp8_meta = _w2_meta()
     fp16_meta = _w2_meta(a_dtype="float16")
     hit = _base_config((48, 256, 64), (48, 32, 64))
 
     reason = Sm90H20SearchSpace.broken_reason(fp8_meta, GemmType.DENSE, hit)
-    assert reason == "bk64-wk64-8bit-wrong-result"
+    assert reason == "bn256-bk64-wk64-8bit-wrong-result"
+    # bn=128 member is measured-correct (and fast) - must NOT be blacklisted.
+    assert (
+        Sm90H20SearchSpace.broken_reason(
+            fp8_meta,
+            GemmType.DENSE,
+            _base_config((48, 128, 64), (48, 32, 64)),
+        )
+        is None
+    )
     assert (
         Sm90H20SearchSpace.broken_reason(
             fp8_meta,
@@ -204,8 +213,8 @@ def test_golden_counts():
     )
 
     # Update these golden counts when the search space intentionally changes.
-    assert len(dense_candidates) == 2632
-    assert len(masked_candidates) == 598
+    assert len(dense_candidates) == 3232
+    assert len(masked_candidates) == 730
 
 
 def test_get_search_space():
