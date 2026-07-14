@@ -43,24 +43,45 @@ def default_expert_max_tokens(args, shape_m):
     return max(64, tokens_per_expert * multiplier)
 
 
+def indexed_input_rows(shape_m, top_k, is_moe_down):
+    """Activation rows and routing token count for indexed gemm.
+
+    ``shape_m`` is routed rows (tokens * top_k), matching the serving bucket key
+    ``estimate_local_valid_shape_m() = topk_ids.nelement()``. w13 consumes
+    per-token activations (``shape_m // top_k`` rows); w2 consumes the routed
+    rows themselves (``shape_m`` rows). Routing metadata is built from the token
+    count for both.
+    """
+    if shape_m % top_k != 0:
+        raise ValueError(f"indexed shape_m={shape_m} must be divisible by top_k={top_k}")
+    routing_tokens = shape_m // top_k
+    activation_rows = shape_m if is_moe_down else routing_tokens
+    return activation_rows, routing_tokens
+
+
 def make_inputs(args, gemm_type, torch_dtype, shape_m, block_size_config=None):
     import torch
 
     from humming import ops
     from humming.utils.test import generate_random_moe_tensors
 
+    # Number of token rows fed to the routing generator (topk_ids is
+    # [routing_tokens, top_k]). For indexed this is derived from routed rows;
+    # for masked it stays the token count consumed by default_expert_max_tokens.
+    routing_tokens = shape_m
     if gemm_type.value == "dense":
         actual_shape_m = shape_m
         expert_max_tokens = None
     elif gemm_type.value == "indexed":
-        # sorted_ids padding depends on block_m; token-order output stays comparable.
-        actual_shape_m = shape_m * (args.top_k if args.is_moe_down else 1)
+        actual_shape_m, routing_tokens = indexed_input_rows(
+            shape_m, args.top_k, args.is_moe_down
+        )
         expert_max_tokens = None
     else:
         expert_max_tokens = default_expert_max_tokens(args, shape_m)
         actual_shape_m = args.num_experts * expert_max_tokens
 
-    # Indexed metadata is cached per block_m; keep activations identical across configs.
+    # Metadata is cached per block_m; keep activations identical across configs.
     torch.cuda.manual_seed(shape_m)
     inputs = torch.randn((actual_shape_m, args.shape_k), dtype=torch_dtype, device="cuda:0")
     input_scale = None
@@ -79,7 +100,7 @@ def make_inputs(args, gemm_type, torch_dtype, shape_m, block_size_config=None):
         num_tokens_padded = None
     else:
         moe_tensors = generate_random_moe_tensors(
-            shape_m=shape_m,
+            shape_m=routing_tokens,
             num_experts=args.num_experts,
             top_k=args.top_k,
             gemm_type=gemm_type,
