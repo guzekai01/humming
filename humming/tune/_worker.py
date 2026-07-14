@@ -60,6 +60,8 @@ def make_inputs(args, gemm_type, torch_dtype, shape_m, block_size_config=None):
         expert_max_tokens = default_expert_max_tokens(args, shape_m)
         actual_shape_m = args.num_experts * expert_max_tokens
 
+    # Indexed metadata is cached per block_m; keep activations identical across configs.
+    torch.cuda.manual_seed(shape_m)
     inputs = torch.randn((actual_shape_m, args.shape_k), dtype=torch_dtype, device="cuda:0")
     input_scale = None
     if args.a_dtype not in ["float16", "bfloat16"]:
