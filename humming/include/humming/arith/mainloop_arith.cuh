@@ -39,6 +39,8 @@ private:
   static constexpr bool kIsFpZeroPoint = Ctx::kIsFpZeroPoint;
   static constexpr bool kUseIntWeightScale = Ctx::kUseIntWeightScale;
   static constexpr bool kUseFusedE8m0Scale = Ctx::kUseFusedE8m0Scale;
+  static constexpr bool kUseMode2FixedMxfp4CScale = Ctx::kUseMode2FixedMxfp4CScale;
+  static constexpr bool kApplyGroupWeightScaleOnC = Ctx::kApplyGroupWeightScaleOnC;
   static constexpr bool kUseNativeDequantB =
       Ctx::kUseNativeDequant && kUseNativeWeightDequant<ElementB, ElementA>;
   static constexpr bool kUseNativeDequantBS =
@@ -243,7 +245,7 @@ public:
       is_last_iter = iter_id == (Ctx::kWarpIters - 1);
     }
     uint32_t is_as_group_end = kIsGroupInputScale && k_index % kInputScaleGroupSize == 0;
-    constexpr bool kProcessGroupWeightScale = kIsGroupWeightScale && !kUseFusedE8m0Scale;
+    constexpr bool kProcessGroupWeightScale = kApplyGroupWeightScaleOnC;
     constexpr bool kProcessBlockWeightScale = kIsBlockWeightScale && !kUseFusedE8m0Scale;
     uint32_t is_bs_group_end = (kProcessGroupWeightScale || kProcessBlockWeightScale) && k_index % kWeightScaleGroupSize == 0;
 
@@ -341,8 +343,19 @@ public:
         constexpr uint32_t kTailScales = kNumBSPerGroup % 4;
 
         PRAGMA_UNROLL
-        for (uint32_t i = 0; i < kFullPackets; i++)
-          dq_bs_vals[i] = F8Conversion<ElementBS>::num42float4(bs_vals[i]);
+        for (uint32_t i = 0; i < kFullPackets; i++) {
+          if constexpr (kUseMode2FixedMxfp4CScale) {
+            // Resident bytes are raw relative exponents r in [1, 12]. The
+            // fixed-offset=1 decoder needs C-side 2^(r-1), whose canonical
+            // E8M0 encoding is r + 126. The range guarantee prevents carry
+            // across packed bytes.
+            uint32_t packed = reinterpret_cast<uint32_t *>(bs_vals)[i] + 0x7E7E7E7E;
+            dq_bs_vals[i] =
+                F8Conversion<ElementBS>::num42float4(*reinterpret_cast<F8x4 *>(&packed));
+          } else {
+            dq_bs_vals[i] = F8Conversion<ElementBS>::num42float4(bs_vals[i]);
+          }
+        }
 
         if constexpr (kTailScales != 0) {
           uint32_t packed = 0;
@@ -350,8 +363,10 @@ public:
           uint8_t *dst = reinterpret_cast<uint8_t *>(&packed);
 
           PRAGMA_UNROLL
-          for (uint32_t i = 0; i < kTailScales; i++)
+          for (uint32_t i = 0; i < kTailScales; i++) {
             dst[i] = src[kFullPackets * 4 + i];
+            if constexpr (kUseMode2FixedMxfp4CScale) dst[i] += 126;
+          }
 
           dq_bs_vals[kFullPackets] =
               F8Conversion<ElementBS>::num42float4(*reinterpret_cast<F8x4 *>(&packed));
@@ -372,10 +387,9 @@ public:
     if constexpr (ElementA::kBits == 16) return;
     if constexpr (!kIsGroupInputScale && !kIsGroupWeightScale && !kIsBlockWeightScale) return;
     if constexpr (kUseWgmma) return;
-    constexpr bool kApplyGroupWeightScaleOnC = kIsGroupWeightScale && !kUseFusedE8m0Scale;
     constexpr bool kApplyBlockWeightScaleOnC = kIsBlockWeightScale && !kUseFusedE8m0Scale;
     constexpr bool kApplyGroupInputScaleOnC = kIsGroupInputScale;
-    if constexpr (kUseFusedE8m0Scale && !kApplyGroupInputScaleOnC) return;
+    if constexpr (!kApplyGroupWeightScaleOnC && !kApplyBlockWeightScaleOnC && !kApplyGroupInputScaleOnC) return;
 
     may_process_as_and_bs_before_apply_on_c(m, n, k, iter_id);
 
@@ -475,10 +489,9 @@ public:
     if constexpr (ElementA::kBits == 16) return;
     if constexpr (!kIsGroupInputScale && !kIsGroupWeightScale && !kIsBlockWeightScale) return;
     if constexpr (!kUseWgmma) return;
-    constexpr bool kApplyGroupWeightScaleOnC = kIsGroupWeightScale && !kUseFusedE8m0Scale;
     constexpr bool kApplyBlockWeightScaleOnC = kIsBlockWeightScale && !kUseFusedE8m0Scale;
     constexpr bool kApplyGroupInputScaleOnC = kIsGroupInputScale;
-    if constexpr (kUseFusedE8m0Scale && !kApplyGroupInputScaleOnC) return;
+    if constexpr (!kApplyGroupWeightScaleOnC && !kApplyBlockWeightScaleOnC && !kApplyGroupInputScaleOnC) return;
 
     may_process_as_and_bs_before_apply_on_c(m, 0, k, iter_id);
 

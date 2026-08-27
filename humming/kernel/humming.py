@@ -408,6 +408,40 @@ class HummingKernel(KernelRuntime, LayerConfig, ComputeConfig, TuningConfig):
         assert not (self.mma_type == MmaType.MXMMA and self.use_f16_accum), (
             "MXMMA does not support FP16 accumulation"
         )
+        if self.use_mode2_fixed_mxfp4_c_scale:
+            assert self.sm_version == 90, "mode-2 fixed MXFP4 C-scale POC only supports SM90"
+            assert self.use_fused_e8m0_scale, (
+                "mode-2 fixed MXFP4 C-scale requires native fused resident storage"
+            )
+            assert self.mma_type == MmaType.WGMMA
+            assert self.a_dtype == dtypes.float8e4m3
+            assert self.b_dtype == dtypes.float4e2m1
+            assert self.bs_dtype == dtypes.float8e8m0
+            assert self.is_group_weight_scale and self.weight_scale_group_size == 32
+            assert self.input_scale_group_size == 0
+            assert self.is_tensor_weight_scale_2
+            assert not self.has_zero_point
+            assert not self.use_f16_accum
+            assert not self.use_packed_k_layout
+            assert self.is_indexed_gemm
+            assert not self.use_batch_invariant
+            assert not self.use_warp_spec
+            assert not self.use_tma
+            poc_schedule = (
+                (self.shape_n, self.shape_k, self.num_experts),
+                tuple(self.block_shape),
+                tuple(self.warp_shape),
+                self.use_stream_k,
+                self.num_stages,
+                self.num_ctas_per_sm,
+            )
+            assert poc_schedule in {
+                # K3 W2 exact M32 target.
+                ((3584, 384, 896), (8, 128, 128), (8, 32, 128), False, 5, 4),
+                # K3 W13 exact M32 target, plus its non-Stream-K correctness control.
+                ((768, 3584, 896), (8, 256, 64), (8, 64, 64), True, 3, 3),
+                ((768, 3584, 896), (8, 256, 64), (8, 64, 64), False, 3, 3),
+            }
         if self.mma_type == MmaType.MXMMA and self.has_zero_point:
             self.use_stream_k = False
         if self.mma_type == MmaType.WGMMA:

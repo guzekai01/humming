@@ -56,8 +56,28 @@ struct KernelContext : LayerConfig_, ComputeConfig_, TuningConfig_ {
   static constexpr bool kUseWgmma = LayerConfig::kMmaType == MmaType::WGMMA;
   static constexpr bool kUseMxmma = LayerConfig::kMmaType == MmaType::MXMMA;
 
+  // This experimental compute mode keeps the fused mode-2 resident tensors,
+  // but moves the per-K32 relative scale from the B decoder to C promotion.
+  static constexpr bool kUseMode2FixedMxfp4CScale = TuningConfig::kUseMode2FixedMxfp4CScale;
+  static constexpr bool kFuseGroupWeightScaleIntoB =
+      LayerConfig::kUseFusedE8m0Scale && !kUseMode2FixedMxfp4CScale;
+  static constexpr bool kApplyGroupWeightScaleOnC =
+      LayerConfig::kIsGroupWeightScale &&
+      (!LayerConfig::kUseFusedE8m0Scale || kUseMode2FixedMxfp4CScale);
+
+  static_assert(!kUseMode2FixedMxfp4CScale || LayerConfig::kUseFusedE8m0Scale);
+  static_assert(!kUseMode2FixedMxfp4CScale || LayerConfig::kIsGroupWeightScale);
+  static_assert(!kUseMode2FixedMxfp4CScale || LayerConfig::kWeightScaleGroupSize == 32);
+  static_assert(!kUseMode2FixedMxfp4CScale || LayerConfig::kInputScaleGroupSize == 0);
+  static_assert(!kUseMode2FixedMxfp4CScale || LayerConfig::kIsTensorWeightScale2);
+  static_assert(!kUseMode2FixedMxfp4CScale || !LayerConfig::kHasZeroPoint);
+  static_assert(!kUseMode2FixedMxfp4CScale || !ComputeConfig::kUseF16Accum);
+  static_assert(!kUseMode2FixedMxfp4CScale || kIsIndexedGemm);
+  static_assert(!kUseMode2FixedMxfp4CScale || kUseWgmma);
+
   static constexpr bool kUsePackedKLayout = LayerConfig::kUsePackedKLayout;
   static constexpr uint32_t kPackedKFactor = kUsePackedKLayout ? 2 : 1;
+  static_assert(!kUseMode2FixedMxfp4CScale || !kUsePackedKLayout);
 
   static constexpr uint32_t M_WARPS = BlockShape::M / WarpShape::M;
   static constexpr uint32_t N_WARPS = BlockShape::N / WarpShape::N;

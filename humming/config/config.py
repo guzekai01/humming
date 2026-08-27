@@ -373,6 +373,10 @@ class TuningConfig(BaseHummingConfig):
     block_shape: tuple[int, int, int]
     warp_shape: tuple[int, int, int]
 
+    # POC: decode native mode-2 MXFP4 with fixed exp_offset=1, then apply
+    # the raw relative-exponent group scale on the C accumulator.
+    use_mode2_fixed_mxfp4_c_scale: bool = False
+
     use_stream_k: bool = True
 
     num_stages: int = 2

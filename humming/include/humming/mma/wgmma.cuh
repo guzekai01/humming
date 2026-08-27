@@ -34,6 +34,9 @@ public:
   static constexpr bool kHasZeroPoint = Ctx::kHasZeroPoint;
   static constexpr bool kIsFpZeroPoint = Ctx::kIsFpZeroPoint;
   static constexpr bool kUseFusedE8m0Scale = Ctx::kUseFusedE8m0Scale;
+  static constexpr bool kUseMode2FixedMxfp4CScale = Ctx::kUseMode2FixedMxfp4CScale;
+  static constexpr bool kFuseGroupWeightScaleIntoB = Ctx::kFuseGroupWeightScaleIntoB;
+  static constexpr bool kApplyGroupWeightScaleOnC = Ctx::kApplyGroupWeightScaleOnC;
 
   static constexpr uint32_t kPartMmaShapeK = 256 / ElementA::kBits;
   static constexpr uint32_t kSwizzleBytes = ElementA::kBits * BlockShape::K >= 1024 ? 128 : 64;
@@ -80,7 +83,10 @@ public:
   void transform_b(uint32_t buffer_id, uint32_t iter_id) {
     if constexpr (std::is_same<ElementA, ElementB>::value) return;
 
-    if constexpr (kUseFusedE8m0Scale) {
+    if constexpr (kUseMode2FixedMxfp4CScale) {
+      uint32_t *regs_b_ptr = reinterpret_cast<uint32_t *>(regs_b[buffer_id]);
+      fixed_dequant_for_mxfp4<ElementA, WarpShape::N / 16, true, 1>(regs_qb[buffer_id], regs_b_ptr);
+    } else if constexpr (kFuseGroupWeightScaleIntoB) {
       uint32_t *regs_b_ptr = reinterpret_cast<uint32_t *>(regs_b[buffer_id]);
       fused_dequant_for_mxfp4<ElementA, WarpShape::N / 16, true>(regs_qb[buffer_id], regs_b_ptr, arith.bs[buffer_id]);
     } else {
@@ -134,7 +140,7 @@ public:
       if constexpr (ElementA::kBits != 16 && Ctx::kInputScaleGroupSize > 0) {
         scale_d = (k_slab * kPartMmaShapeK) % Ctx::kInputScaleGroupSize > 0;
       }
-      if constexpr (!kUseFusedE8m0Scale && ElementA::kBits != 16 && Ctx::kWeightScaleGroupSize > 0) {
+      if constexpr (kApplyGroupWeightScaleOnC && ElementA::kBits != 16 && Ctx::kWeightScaleGroupSize > 0) {
         scale_d = scale_d && (k_slab * kPartMmaShapeK) % Ctx::kWeightScaleGroupSize > 0;
       }
 
@@ -190,7 +196,8 @@ public:
 
   static constexpr uint32_t final_regs_c_index() {
     if constexpr (ElementA::kBits < 16 && Ctx::kInputScaleGroupSize > 0) return 1;
-    if constexpr (ElementA::kBits < 16 && !kUseFusedE8m0Scale && (Ctx::kIsGroupWeightScale || Ctx::kIsBlockWeightScale)) return 1;
+    if constexpr (ElementA::kBits < 16 &&
+                  (kApplyGroupWeightScaleOnC || (!kUseFusedE8m0Scale && Ctx::kIsBlockWeightScale))) return 1;
     return 0;
   };
 

@@ -70,3 +70,50 @@ CUDA_INLINE void fused_dequant_for_mxfp4(const uint32_t *qb_ptrs, uint32_t *res_
     }
   }
 }
+
+
+template <uint32_t kFixedExpOffset>
+CUDA_INLINE uint2 fixed_dequant_single_for_mxfp4_e4m3(const uint32_t qb) {
+  static_assert(kFixedExpOffset == 1, "POC only validates fixed exp_offset=1");
+
+  constexpr uint32_t exp_offset_buffer1 =
+      (kFixedExpOffset * 0x08080800) + ((0x03020100 << 2) - 0x00000400);
+  constexpr uint32_t exp_offset_buffer2 =
+      (kFixedExpOffset * 0x08080808) + (0x07060504 << 2);
+
+  uint32_t exp_offsets[2] = {
+      __byte_perm(exp_offset_buffer1, exp_offset_buffer2, qb),
+      __byte_perm(exp_offset_buffer1, exp_offset_buffer2, qb >> 16)};
+
+  uint32_t res[2] = {
+      lop3_and_or(qb << 4, 0x80808080, exp_offsets[0]),
+      lop3_and_or(qb, 0x80808080, exp_offsets[1])};
+
+  return *reinterpret_cast<uint2 *>(res);
+}
+
+
+// Decode the native mode-2 MXFP4 payload with a compile-time exponent offset.
+// Unlike fused_dequant_for_mxfp4, this decoder does not consume the resident
+// raw relative scale. kFixedExpOffset=1 produces q / 32 in E4M3 registers.
+template <class TargetType, uint32_t kCount, bool kUseWgmma, uint32_t kFixedExpOffset>
+CUDA_INLINE void fixed_dequant_for_mxfp4(const uint32_t *qb_ptrs, uint32_t *res_ptrs) {
+  static_assert(std::is_same<TargetType, Float8E4M3>::value);
+  static_assert(kFixedExpOffset == 1, "POC only validates fixed exp_offset=1");
+
+  PRAGMA_UNROLL
+  for (uint32_t i = 0; i < kCount * 2; i++) {
+    uint2 res = fixed_dequant_single_for_mxfp4_e4m3<kFixedExpOffset>(qb_ptrs[i]);
+    res_ptrs[i * 2] = res.x;
+    res_ptrs[i * 2 + 1] = res.y;
+  }
+
+  if constexpr (kUseWgmma) {
+    PRAGMA_UNROLL
+    for (uint32_t i = 0; i < kCount; i++) {
+      uint32_t tmp = res_ptrs[i * 4 + 1];
+      res_ptrs[i * 4 + 1] = res_ptrs[i * 4 + 2];
+      res_ptrs[i * 4 + 2] = tmp;
+    }
+  }
+}
